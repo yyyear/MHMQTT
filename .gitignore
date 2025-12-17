@@ -1,4 +1,5 @@
 <<<<<<< HEAD
+<<<<<<< HEAD
 # If you prefer the allow list template instead of the deny list, see community template:
 # https://github.com/github/gitignore/blob/main/community/Golang/Go.AllowList.gitignore
 #
@@ -74,3 +75,48 @@ logs/
 Thumbs.db
 
 >>>>>>> eb82cb7 (初始化)
+=======
+# Binaries
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+mhmqtt
+
+# Test binary
+*.test
+
+# Output of the go coverage tool
+*.out
+
+# Dependency directories
+vendor/
+
+# Go workspace file
+go.work
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Build
+bin/
+dist/
+
+# Data
+data/
+*.db
+
+# Logs
+logs/
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+>>>>>>> 54fd144 (initial commit)
