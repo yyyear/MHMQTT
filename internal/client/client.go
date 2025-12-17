@@ -1,13 +1,12 @@
 package client
 
 import (
-	"encoding/binary"
 	"fmt"
 	"io"
 	"net"
 	"sync"
 	"time"
-
+	
 	"mhmqtt/internal/protocol"
 	"mhmqtt/internal/storage"
 )
@@ -28,9 +27,9 @@ type Client struct {
 	packetIDCounter uint16
 	
 	// 回调
-	onDisconnect func(*Client)
-	onPublish    func(*Client, *protocol.PublishMessage)
-	onSubscribe  func(*Client, *protocol.SubscribeMessage)
+	onDisconnect  func(*Client)
+	onPublish     func(*Client, *protocol.PublishMessage)
+	onSubscribe   func(*Client, *protocol.SubscribeMessage)
 	onUnsubscribe func(*Client, *protocol.UnsubscribeMessage)
 	onPing        func(*Client)
 	
@@ -78,9 +77,9 @@ func (c *Client) Start() error {
 		timeout := time.Duration(c.KeepAlive) * time.Second * 3 / 2
 		c.Conn.SetReadDeadline(time.Now().Add(timeout))
 	}
-
+	
 	reader := protocol.NewPacketReader(c.Conn, 1024*1024) // 1MB max
-
+	
 	for {
 		packet, err := reader.ReadPacket()
 		if err != nil {
@@ -91,13 +90,13 @@ func (c *Client) Start() error {
 			c.Disconnect()
 			return err
 		}
-
+		
 		// 更新读取超时
 		if c.KeepAlive > 0 {
 			timeout := time.Duration(c.KeepAlive) * time.Second * 3 / 2
 			c.Conn.SetReadDeadline(time.Now().Add(timeout))
 		}
-
+		
 		if err := c.handlePacket(packet); err != nil {
 			c.Disconnect()
 			return err
@@ -111,14 +110,14 @@ func (c *Client) handlePacket(packet []byte) error {
 	if err != nil {
 		return err
 	}
-
+	
 	c.mu.RLock()
 	onPublish := c.onPublish
 	onSubscribe := c.onSubscribe
 	onUnsubscribe := c.onUnsubscribe
 	onPing := c.onPing
 	c.mu.RUnlock()
-
+	
 	switch m := msg.(type) {
 	case *protocol.ConnectMessage:
 		return fmt.Errorf("重复的 CONNECT 消息")
@@ -307,11 +306,11 @@ func (c *Client) Disconnect() {
 	c.connected = false
 	onDisconnect := c.onDisconnect
 	c.mu.Unlock()
-
+	
 	if c.Conn != nil {
 		c.Conn.Close()
 	}
-
+	
 	if onDisconnect != nil {
 		onDisconnect(c)
 	}
@@ -330,4 +329,3 @@ func (c *Client) GetLastPing() time.Time {
 	defer c.mu.RUnlock()
 	return c.lastPing
 }
-

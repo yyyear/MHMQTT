@@ -1,11 +1,10 @@
 package storage
 
 import (
-	"encoding/binary"
 	"encoding/json"
 	"fmt"
 	"time"
-
+	
 	"go.etcd.io/bbolt"
 	"mhmqtt/internal/protocol"
 )
@@ -39,12 +38,12 @@ type Storage interface {
 
 // Session 会话信息
 type Session struct {
-	ClientID     string
-	CleanSession bool
+	ClientID      string
+	CleanSession  bool
 	Subscriptions map[string]byte // topic -> QoS
-	WillMessage  *protocol.Message
-	CreatedAt    time.Time
-	UpdatedAt    time.Time
+	WillMessage   *protocol.Message
+	CreatedAt     time.Time
+	UpdatedAt     time.Time
 }
 
 // BoltStorage BoltDB 存储实现
@@ -58,7 +57,7 @@ func NewBoltStorage(path string) (*BoltStorage, error) {
 	if err != nil {
 		return nil, fmt.Errorf("打开数据库失败: %w", err)
 	}
-
+	
 	// 创建 buckets
 	err = db.Update(func(tx *bbolt.Tx) error {
 		buckets := []string{
@@ -74,12 +73,12 @@ func NewBoltStorage(path string) (*BoltStorage, error) {
 		}
 		return nil
 	})
-
+	
 	if err != nil {
 		db.Close()
 		return nil, err
 	}
-
+	
 	return &BoltStorage{db: db}, nil
 }
 
@@ -275,4 +274,3 @@ func (s *BoltStorage) GetPendingMessages(clientID string) (map[uint16]*protocol.
 func (s *BoltStorage) Close() error {
 	return s.db.Close()
 }
-

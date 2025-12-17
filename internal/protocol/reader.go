@@ -8,19 +8,19 @@ import (
 )
 
 var (
-	ErrInvalidPacket = errors.New("无效的数据包")
+	ErrInvalidPacket  = errors.New("无效的数据包")
 	ErrPacketTooLarge = errors.New("数据包过大")
 )
 
 // PacketReader 数据包读取器
 type PacketReader struct {
-	reader io.Reader
+	reader  io.Reader
 	maxSize int
 }
 
 func NewPacketReader(reader io.Reader, maxSize int) *PacketReader {
 	return &PacketReader{
-		reader: reader,
+		reader:  reader,
 		maxSize: maxSize,
 	}
 }
@@ -32,17 +32,17 @@ func (r *PacketReader) ReadPacket() ([]byte, error) {
 	if _, err := io.ReadFull(r.reader, fixedHeader); err != nil {
 		return nil, err
 	}
-
+	
 	// 读取剩余长度
 	remainingLength, n, err := r.readRemainingLength()
 	if err != nil {
 		return nil, err
 	}
-
+	
 	if remainingLength > r.maxSize {
 		return nil, ErrPacketTooLarge
 	}
-
+	
 	// 读取剩余数据
 	packet := make([]byte, 1+n+remainingLength)
 	packet[0] = fixedHeader[0]
@@ -53,7 +53,7 @@ func (r *PacketReader) ReadPacket() ([]byte, error) {
 			return nil, err
 		}
 	}
-
+	
 	return packet, nil
 }
 
@@ -62,26 +62,26 @@ func (r *PacketReader) readRemainingLength() (int, int, error) {
 	multiplier := 1
 	value := 0
 	bytesRead := 0
-
+	
 	for {
 		b := make([]byte, 1)
 		if _, err := io.ReadFull(r.reader, b); err != nil {
 			return 0, 0, err
 		}
 		bytesRead++
-
+		
 		value += int(b[0]&127) * multiplier
 		multiplier *= 128
-
+		
 		if multiplier > 128*128*128 {
 			return 0, 0, ErrInvalidPacket
 		}
-
+		
 		if (b[0] & 128) == 0 {
 			break
 		}
 	}
-
+	
 	return value, bytesRead, nil
 }
 
@@ -108,17 +108,17 @@ func ReadString(data []byte, offset int) (string, int, error) {
 	if offset+2 > len(data) {
 		return "", 0, ErrInvalidPacket
 	}
-
+	
 	length := int(binary.BigEndian.Uint16(data[offset:]))
 	offset += 2
-
+	
 	if offset+length > len(data) {
 		return "", 0, ErrInvalidPacket
 	}
-
+	
 	str := string(data[offset : offset+length])
 	offset += length
-
+	
 	return str, offset, nil
 }
 
@@ -127,18 +127,18 @@ func ReadBytes(data []byte, offset int) ([]byte, int, error) {
 	if offset+2 > len(data) {
 		return nil, 0, ErrInvalidPacket
 	}
-
+	
 	length := int(binary.BigEndian.Uint16(data[offset:]))
 	offset += 2
-
+	
 	if offset+length > len(data) {
 		return nil, 0, ErrInvalidPacket
 	}
-
+	
 	bytes := make([]byte, length)
 	copy(bytes, data[offset:offset+length])
 	offset += length
-
+	
 	return bytes, offset, nil
 }
 
@@ -171,12 +171,12 @@ func ParseConnect(data []byte) (*ConnectMessage, error) {
 	if len(data) < 2 {
 		return nil, ErrInvalidPacket
 	}
-
+	
 	msgType := (data[0] >> 4) & 0x0F
 	if msgType != CONNECT {
 		return nil, fmt.Errorf("不是 CONNECT 消息")
 	}
-
+	
 	offset := 1
 	// 跳过剩余长度
 	_, n, err := readRemainingLength(data, offset)
@@ -184,22 +184,22 @@ func ParseConnect(data []byte) (*ConnectMessage, error) {
 		return nil, err
 	}
 	offset += n
-
+	
 	msg := &ConnectMessage{}
-
+	
 	// 读取协议名
 	msg.ProtocolName, offset, err = ReadString(data, offset)
 	if err != nil {
 		return nil, err
 	}
-
+	
 	// 读取协议版本
 	if offset >= len(data) {
 		return nil, ErrInvalidPacket
 	}
 	msg.ProtocolVersion = data[offset]
 	offset++
-
+	
 	// 读取连接标志
 	if offset >= len(data) {
 		return nil, ErrInvalidPacket
@@ -212,13 +212,13 @@ func ParseConnect(data []byte) (*ConnectMessage, error) {
 	msg.PasswordFlag = (flags & 0x40) != 0
 	msg.UsernameFlag = (flags & 0x80) != 0
 	offset++
-
+	
 	// 读取 Keep Alive
 	msg.KeepAlive, offset, err = ReadUint16(data, offset)
 	if err != nil {
 		return nil, err
 	}
-
+	
 	// v5.0 属性
 	if msg.ProtocolVersion == Version50 {
 		// 跳过属性长度
@@ -234,13 +234,13 @@ func ParseConnect(data []byte) (*ConnectMessage, error) {
 			}
 		}
 	}
-
+	
 	// 读取 Client ID
 	msg.ClientID, offset, err = ReadString(data, offset)
 	if err != nil {
 		return nil, err
 	}
-
+	
 	// 读取 Will 消息
 	if msg.WillFlag {
 		msg.WillTopic, offset, err = ReadString(data, offset)
@@ -252,7 +252,7 @@ func ParseConnect(data []byte) (*ConnectMessage, error) {
 			return nil, err
 		}
 	}
-
+	
 	// 读取用户名
 	if msg.UsernameFlag {
 		msg.Username, offset, err = ReadString(data, offset)
@@ -260,7 +260,7 @@ func ParseConnect(data []byte) (*ConnectMessage, error) {
 			return nil, err
 		}
 	}
-
+	
 	// 读取密码
 	if msg.PasswordFlag {
 		msg.Password, offset, err = ReadBytes(data, offset)
@@ -268,7 +268,7 @@ func ParseConnect(data []byte) (*ConnectMessage, error) {
 			return nil, err
 		}
 	}
-
+	
 	return msg, nil
 }
 
@@ -277,28 +277,28 @@ func readRemainingLength(data []byte, offset int) (int, int, error) {
 	multiplier := 1
 	value := 0
 	bytesRead := 0
-
+	
 	for {
 		if offset >= len(data) {
 			return 0, 0, ErrInvalidPacket
 		}
-
+		
 		b := data[offset]
 		offset++
 		bytesRead++
-
+		
 		value += int(b&127) * multiplier
 		multiplier *= 128
-
+		
 		if multiplier > 128*128*128 {
 			return 0, 0, ErrInvalidPacket
 		}
-
+		
 		if (b & 128) == 0 {
 			break
 		}
 	}
-
+	
 	return value, bytesRead, nil
 }
 
@@ -307,54 +307,54 @@ func readVariableByteInteger(data []byte, offset int) (uint32, int, error) {
 	multiplier := uint32(1)
 	value := uint32(0)
 	bytesRead := 0
-
+	
 	for {
 		if offset >= len(data) {
 			return 0, 0, ErrInvalidPacket
 		}
-
+		
 		b := data[offset]
 		offset++
 		bytesRead++
-
+		
 		value += uint32(b&127) * multiplier
 		multiplier *= 128
-
+		
 		if multiplier > 128*128*128*128 {
 			return 0, 0, ErrInvalidPacket
 		}
-
+		
 		if (b & 128) == 0 {
 			break
 		}
 	}
-
+	
 	return value, bytesRead, nil
 }
 
 // ReadProperties 读取属性（v5.0）
-func ReadProperties(data []byte, offset int, maxLen int) (*Properties, error) {
+func ReadProperties(data []byte, offset int, maxLen int) (*Properties, int, error) {
 	props := &Properties{
 		UserProperties: make(map[string]string),
 	}
 	startOffset := offset
 	endOffset := offset + maxLen
-
+	
 	for offset < endOffset {
 		if offset >= len(data) {
 			break
 		}
-
+		
 		propID, n, err := readVariableByteInteger(data, offset)
 		if err != nil {
-			return nil, err
+			return nil, startOffset, err
 		}
 		offset += n
-
+		
 		switch propID {
 		case 1: // Payload Format Indicator
 			if offset >= len(data) {
-				return nil, ErrInvalidPacket
+				return nil, startOffset, ErrInvalidPacket
 			}
 			val := data[offset]
 			props.PayloadFormatIndicator = &val
@@ -362,41 +362,41 @@ func ReadProperties(data []byte, offset int, maxLen int) (*Properties, error) {
 		case 2: // Message Expiry Interval
 			val, n, err := ReadUint32(data, offset)
 			if err != nil {
-				return nil, err
+				return nil, startOffset, err
 			}
 			props.MessageExpiryInterval = &val
 			offset += n
 		case 3: // Content Type
 			props.ContentType, offset, err = ReadString(data, offset)
 			if err != nil {
-				return nil, err
+				return nil, startOffset, err
 			}
 		case 8: // Response Topic
 			props.ResponseTopic, offset, err = ReadString(data, offset)
 			if err != nil {
-				return nil, err
+				return nil, startOffset, err
 			}
 		case 9: // Correlation Data
 			props.CorrelationData, offset, err = ReadBytes(data, offset)
 			if err != nil {
-				return nil, err
+				return nil, startOffset, err
 			}
 		case 11: // Topic Alias
 			val, n, err := ReadUint16(data, offset)
 			if err != nil {
-				return nil, err
+				return nil, startOffset, err
 			}
 			props.TopicAlias = &val
 			offset += n
 		case 23: // User Property
 			key, n, err := ReadString(data, offset)
 			if err != nil {
-				return nil, err
+				return nil, startOffset, err
 			}
 			offset = n
 			value, n, err := ReadString(data, offset)
 			if err != nil {
-				return nil, err
+				return nil, startOffset, err
 			}
 			props.UserProperties[key] = value
 			offset = n
@@ -404,16 +404,15 @@ func ReadProperties(data []byte, offset int, maxLen int) (*Properties, error) {
 			// 简化处理，只读取第一个
 			val, n, err := readVariableByteInteger(data, offset)
 			if err != nil {
-				return nil, err
+				return nil, startOffset, err
 			}
 			props.SubscriptionIdentifier = append(props.SubscriptionIdentifier, val)
 			offset += n
 		default:
 			// 跳过未知属性
-			return nil, fmt.Errorf("未知属性 ID: %d", propID)
+			return nil, startOffset, fmt.Errorf("未知属性 ID: %d", propID)
 		}
 	}
-
-	return props, nil
+	
+	return props, offset, nil
 }
-

@@ -2,11 +2,10 @@ package httpapi
 
 import (
 	"encoding/json"
-	"fmt"
 	"log"
 	"net/http"
 	"time"
-
+	
 	"github.com/gorilla/mux"
 	"mhmqtt/internal/config"
 	"mhmqtt/internal/protocol"
@@ -30,7 +29,7 @@ func NewAPI(broker interface{}, cfg *config.Config) *API {
 // Start 启动 API 服务器
 func (a *API) Start() error {
 	router := mux.NewRouter()
-
+	
 	// API 路由
 	api := router.PathPrefix("/api").Subrouter()
 	api.HandleFunc("/status", a.getStatus).Methods("GET")
@@ -40,7 +39,7 @@ func (a *API) Start() error {
 	api.HandleFunc("/cluster/nodes", a.getClusterNodes).Methods("GET")
 	api.HandleFunc("/cluster/add", a.addClusterNode).Methods("POST")
 	api.HandleFunc("/cluster/remove", a.removeClusterNode).Methods("POST")
-
+	
 	a.server = &http.Server{
 		Addr:         a.config.Broker.HTTPAddress,
 		Handler:      router,
@@ -48,7 +47,7 @@ func (a *API) Start() error {
 		WriteTimeout: 15 * time.Second,
 		IdleTimeout:  60 * time.Second,
 	}
-
+	
 	log.Printf("HTTP API 服务器启动在 %s", a.config.Broker.HTTPAddress)
 	return a.server.ListenAndServe()
 }
@@ -62,7 +61,7 @@ func (a *API) getStatus(w http.ResponseWriter, r *http.Request) {
 		"timestamp": time.Now().Unix(),
 		"version":   "1.0",
 	}
-
+	
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(status)
 }
@@ -77,7 +76,7 @@ func (a *API) getClients(w http.ResponseWriter, r *http.Request) {
 			"version": "3.1.1",
 		},
 	}
-
+	
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(clients)
 }
@@ -90,12 +89,12 @@ func (a *API) publish(w http.ResponseWriter, r *http.Request) {
 		QoS     byte   `json:"qos"`
 		Retain  bool   `json:"retain"`
 	}
-
+	
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-
+	
 	// 创建消息
 	msg := &protocol.Message{
 		Topic:   req.Topic,
@@ -103,11 +102,11 @@ func (a *API) publish(w http.ResponseWriter, r *http.Request) {
 		QoS:     req.QoS,
 		Retain:  req.Retain,
 	}
-
+	
 	// 发布消息（需要通过接口调用 broker）
 	// 简化处理
 	_ = msg
-
+	
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{
 		"status": "ok",
@@ -120,7 +119,7 @@ func (a *API) getTopics(w http.ResponseWriter, r *http.Request) {
 		"test/topic1",
 		"test/topic2",
 	}
-
+	
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(topics)
 }
@@ -134,7 +133,7 @@ func (a *API) getClusterNodes(w http.ResponseWriter, r *http.Request) {
 			"status":  "connected",
 		},
 	}
-
+	
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(nodes)
 }
@@ -145,15 +144,15 @@ func (a *API) addClusterNode(w http.ResponseWriter, r *http.Request) {
 		NodeID  string `json:"node_id"`
 		Address string `json:"address"`
 	}
-
+	
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-
+	
 	// 添加节点（需要通过接口调用 cluster）
 	_ = req
-
+	
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{
 		"status": "ok",
@@ -165,18 +164,17 @@ func (a *API) removeClusterNode(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		NodeID string `json:"node_id"`
 	}
-
+	
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-
+	
 	// 移除节点（需要通过接口调用 cluster）
 	_ = req
-
+	
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{
 		"status": "ok",
 	})
 }
-

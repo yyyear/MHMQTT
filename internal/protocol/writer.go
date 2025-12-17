@@ -1,9 +1,6 @@
 package protocol
 
-import (
-	"encoding/binary"
-	"errors"
-)
+import ()
 
 // PacketWriter 数据包写入器
 type PacketWriter struct {
@@ -75,10 +72,10 @@ func WriteUint16(buf []byte, val uint16) []byte {
 
 // WriteUint32 写入 uint32
 func WriteUint32(buf []byte, val uint32) []byte {
-	return append(buf, 
-		byte(val>>24), 
-		byte(val>>16), 
-		byte(val>>8), 
+	return append(buf,
+		byte(val>>24),
+		byte(val>>16),
+		byte(val>>8),
 		byte(val&0xFF))
 }
 
@@ -305,4 +302,3 @@ func WriteProperties(buf []byte, props *Properties) []byte {
 	
 	return buf
 }
-
