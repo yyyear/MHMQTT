@@ -1,0 +1,36 @@
+# MQTT Broker 配置
+broker:
+  # MQTT 监听地址
+  address: ":1883"
+  # WebSocket 监听地址
+  ws_address: ":8083"
+  # HTTP API 监听地址
+  http_address: ":8080"
+  
+  # 连接超时（秒）
+  keep_alive: 300
+  # 最大消息大小（字节）
+  max_message_size: 1048576
+  # 最大客户端数
+  max_clients: 10000
+  
+  # 数据存储路径
+  data_path: "./data"
+  
+  # 集群配置
+  cluster:
+    enabled: false
+    # 节点 ID
+    node_id: "node1"
+    # 集群地址列表
+    nodes:
+      - "127.0.0.1:1884"
+      - "127.0.0.1:1885"
+    # 集群通信端口
+    cluster_port: 1884
+
+# 日志配置
+log:
+  level: "info"
+  file: "./logs/broker.log"
+
