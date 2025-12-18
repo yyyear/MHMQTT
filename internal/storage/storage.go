@@ -3,10 +3,11 @@ package storage
 import (
 	"encoding/json"
 	"fmt"
+	"os"
 	"time"
-	
+
 	"mhmqtt/internal/protocol"
-	
+
 	"go.etcd.io/bbolt"
 )
 
@@ -16,24 +17,24 @@ type Storage interface {
 	SaveSession(session *Session) error
 	GetSession(clientID string) (*Session, error)
 	DeleteSession(clientID string) error
-	
+
 	// 离线消息
 	SaveOfflineMessage(clientID string, msg *protocol.Message) error
 	GetOfflineMessages(clientID string) ([]*protocol.Message, error)
 	DeleteOfflineMessage(clientID string, packetID uint16) error
-	
+
 	// Retained 消息
 	SaveRetainedMessage(topic string, msg *protocol.Message) error
 	GetRetainedMessage(topic string) (*protocol.Message, error)
 	GetRetainedMessages() (map[string]*protocol.Message, error)
 	DeleteRetainedMessage(topic string) error
-	
+
 	// 未过期消息
 	SavePendingMessage(clientID string, packetID uint16, msg *protocol.Message) error
 	GetPendingMessage(clientID string, packetID uint16) (*protocol.Message, error)
 	DeletePendingMessage(clientID string, packetID uint16) error
 	GetPendingMessages(clientID string) (map[uint16]*protocol.Message, error)
-	
+
 	Close() error
 }
 
@@ -54,11 +55,16 @@ type BoltStorage struct {
 
 // NewBoltStorage 创建新的 BoltDB 存储
 func NewBoltStorage(path string) (*BoltStorage, error) {
+	// 创建数据库文件
+	if _, err := os.Stat(path); os.IsNotExist(err) {
+		os.MkdirAll(path, 0755)
+	}
+
 	db, err := bbolt.Open(path, 0600, &bbolt.Options{Timeout: 1 * time.Second})
 	if err != nil {
 		return nil, fmt.Errorf("打开数据库失败: %w", err)
 	}
-	
+
 	// 创建 buckets
 	err = db.Update(func(tx *bbolt.Tx) error {
 		buckets := []string{
@@ -74,12 +80,12 @@ func NewBoltStorage(path string) (*BoltStorage, error) {
 		}
 		return nil
 	})
-	
+
 	if err != nil {
 		_ = db.Close()
 		return nil, err
 	}
-	
+
 	return &BoltStorage{db: db}, nil
 }
 
@@ -137,7 +143,7 @@ func (s *BoltStorage) GetOfflineMessages(clientID string) ([]*protocol.Message, 
 		bucket := tx.Bucket([]byte("offline_messages"))
 		cursor := bucket.Cursor()
 		prefix := []byte(clientID + ":")
-		
+
 		for k, v := cursor.Seek(prefix); k != nil && len(k) > len(prefix) && string(k[:len(prefix)]) == string(prefix); k, v = cursor.Next() {
 			var msg protocol.Message
 			if err := json.Unmarshal(v, &msg); err != nil {
@@ -254,7 +260,7 @@ func (s *BoltStorage) GetPendingMessages(clientID string) (map[uint16]*protocol.
 		bucket := tx.Bucket([]byte("pending_messages"))
 		cursor := bucket.Cursor()
 		prefix := []byte(clientID + ":")
-		
+
 		for k, v := cursor.Seek(prefix); k != nil && len(k) > len(prefix) && string(k[:len(prefix)]) == string(prefix); k, v = cursor.Next() {
 			var msg protocol.Message
 			if err := json.Unmarshal(v, &msg); err != nil {
