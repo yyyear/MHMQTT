@@ -26,19 +26,22 @@ func NewConnectionPool(maxSize int, timeout time.Duration) *ConnectionPool {
 		ctx:     ctx,
 		cancel:  cancel,
 	}
-	
+
 	// 启动清理协程
 	go pool.cleanup()
-	
+
 	return pool
 }
 
 // Add 添加连接
 func (p *ConnectionPool) Add(clientID string, client interface{}) bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
 	if len(p.clients) >= p.maxSize {
 		return false
 	}
-	
+
 	p.clients[clientID] = client
 	return true
 }
@@ -47,7 +50,7 @@ func (p *ConnectionPool) Add(clientID string, client interface{}) bool {
 func (p *ConnectionPool) Get(clientID string) (interface{}, bool) {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
-	
+
 	client, ok := p.clients[clientID]
 	return client, ok
 }
@@ -56,7 +59,7 @@ func (p *ConnectionPool) Get(clientID string) (interface{}, bool) {
 func (p *ConnectionPool) Remove(clientID string) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	
+
 	delete(p.clients, clientID)
 }
 
@@ -64,7 +67,7 @@ func (p *ConnectionPool) Remove(clientID string) {
 func (p *ConnectionPool) Size() int {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
-	
+
 	return len(p.clients)
 }
 
@@ -72,7 +75,7 @@ func (p *ConnectionPool) Size() int {
 func (p *ConnectionPool) GetAll() map[string]interface{} {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
-	
+
 	result := make(map[string]interface{})
 	for k, v := range p.clients {
 		result[k] = v
@@ -84,7 +87,7 @@ func (p *ConnectionPool) GetAll() map[string]interface{} {
 func (p *ConnectionPool) cleanup() {
 	ticker := time.NewTicker(p.timeout / 2)
 	defer ticker.Stop()
-	
+
 	for {
 		select {
 		case <-p.ctx.Done():
@@ -100,6 +103,6 @@ func (p *ConnectionPool) Close() {
 	p.cancel()
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	
+
 	p.clients = make(map[string]interface{})
 }

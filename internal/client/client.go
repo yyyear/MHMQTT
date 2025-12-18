@@ -6,7 +6,7 @@ import (
 	"net"
 	"sync"
 	"time"
-	
+
 	"mhmqtt/internal/protocol"
 	"mhmqtt/internal/storage"
 )
@@ -19,23 +19,24 @@ type Client struct {
 	KeepAlive    uint16
 	CleanSession bool
 	WillMessage  *protocol.Message
-	
+
 	// 状态
 	mu              sync.RWMutex
+	writeMu         sync.Mutex // 写锁，保护 Conn.Write 的并发安全
 	connected       bool
 	lastPing        time.Time
 	packetIDCounter uint16
-	
+
 	// 回调
 	onDisconnect  func(*Client)
 	onPublish     func(*Client, *protocol.PublishMessage)
 	onSubscribe   func(*Client, *protocol.SubscribeMessage)
 	onUnsubscribe func(*Client, *protocol.UnsubscribeMessage)
 	onPing        func(*Client)
-	
+
 	// 存储
 	storage storage.Storage
-	
+
 	// QoS 2 状态
 	pubRecMap map[uint16]bool // 已收到 PUBREC 的 PacketID
 	pubRelMap map[uint16]bool // 已收到 PUBREL 的 PacketID
@@ -77,9 +78,9 @@ func (c *Client) Start() error {
 		timeout := time.Duration(c.KeepAlive) * time.Second * 3 / 2
 		c.Conn.SetReadDeadline(time.Now().Add(timeout))
 	}
-	
+
 	reader := protocol.NewPacketReader(c.Conn, 1024*1024) // 1MB max
-	
+
 	for {
 		packet, err := reader.ReadPacket()
 		if err != nil {
@@ -90,13 +91,13 @@ func (c *Client) Start() error {
 			c.Disconnect()
 			return err
 		}
-		
+
 		// 更新读取超时
 		if c.KeepAlive > 0 {
 			timeout := time.Duration(c.KeepAlive) * time.Second * 3 / 2
 			c.Conn.SetReadDeadline(time.Now().Add(timeout))
 		}
-		
+
 		if err := c.handlePacket(packet); err != nil {
 			c.Disconnect()
 			return err
@@ -110,14 +111,14 @@ func (c *Client) handlePacket(packet []byte) error {
 	if err != nil {
 		return err
 	}
-	
+
 	c.mu.RLock()
 	onPublish := c.onPublish
 	onSubscribe := c.onSubscribe
 	onUnsubscribe := c.onUnsubscribe
 	onPing := c.onPing
 	c.mu.RUnlock()
-	
+
 	switch m := msg.(type) {
 	case *protocol.ConnectMessage:
 		return fmt.Errorf("重复的 CONNECT 消息")
@@ -185,7 +186,7 @@ func (c *Client) handlePubRec(msg *protocol.PubRecMessage) error {
 	c.mu.Lock()
 	c.pubRecMap[msg.PacketID] = true
 	c.mu.Unlock()
-	
+
 	// 发送 PUBREL
 	return c.SendPubRel(msg.PacketID)
 }
@@ -195,7 +196,7 @@ func (c *Client) handlePubRel(msg *protocol.PubRelMessage) error {
 	c.mu.Lock()
 	c.pubRelMap[msg.PacketID] = true
 	c.mu.Unlock()
-	
+
 	// 发送 PUBCOMP
 	return c.SendPubComp(msg.PacketID)
 }
@@ -214,75 +215,76 @@ func (c *Client) handlePing() error {
 	return c.SendPingResp()
 }
 
+// write 安全写入数据（使用写锁保护）
+func (c *Client) write(data []byte) error {
+	c.writeMu.Lock()
+	defer c.writeMu.Unlock()
+	if c.Conn == nil {
+		return fmt.Errorf("connection closed")
+	}
+	_, err := c.Conn.Write(data)
+	return err
+}
+
 // SendConnAck 发送 CONNACK
 func (c *Client) SendConnAck(returnCode byte, sessionPresent bool) error {
 	data := protocol.EncodeConnAck(c.Version, returnCode, sessionPresent)
-	_, err := c.Conn.Write(data)
-	return err
+	return c.write(data)
 }
 
 // SendPublish 发送 PUBLISH
 func (c *Client) SendPublish(msg *protocol.PublishMessage) error {
 	data := protocol.EncodePublish(msg)
-	_, err := c.Conn.Write(data)
-	return err
+	return c.write(data)
 }
 
 // SendPubAck 发送 PUBACK
 func (c *Client) SendPubAck(packetID uint16) error {
 	data := protocol.EncodePubAck(packetID, c.Version)
-	_, err := c.Conn.Write(data)
-	return err
+	return c.write(data)
 }
 
 // SendPubRec 发送 PUBREC
 func (c *Client) SendPubRec(packetID uint16) error {
 	data := protocol.EncodePubRec(packetID, c.Version)
-	_, err := c.Conn.Write(data)
-	return err
+	return c.write(data)
 }
 
 // SendPubRel 发送 PUBREL
 func (c *Client) SendPubRel(packetID uint16) error {
 	data := protocol.EncodePubRel(packetID, c.Version)
-	_, err := c.Conn.Write(data)
-	return err
+	return c.write(data)
 }
 
 // SendPubComp 发送 PUBCOMP
 func (c *Client) SendPubComp(packetID uint16) error {
 	data := protocol.EncodePubComp(packetID, c.Version)
-	_, err := c.Conn.Write(data)
-	return err
+	return c.write(data)
 }
 
 // SendSubAck 发送 SUBACK
 func (c *Client) SendSubAck(packetID uint16, returnCodes []byte) error {
 	data := protocol.EncodeSubAck(packetID, returnCodes, c.Version)
-	_, err := c.Conn.Write(data)
-	return err
+	return c.write(data)
 }
 
 // SendUnsubAck 发送 UNSUBACK
 func (c *Client) SendUnsubAck(packetID uint16) error {
 	returnCodes := []byte{0} // 简化处理
 	data := protocol.EncodeUnsubAck(packetID, returnCodes, c.Version)
-	_, err := c.Conn.Write(data)
-	return err
+	return c.write(data)
 }
 
 // SendPingResp 发送 PINGRESP
 func (c *Client) SendPingResp() error {
 	data := protocol.EncodePingResp()
-	_, err := c.Conn.Write(data)
-	return err
+	return c.write(data)
 }
 
 // SendDisconnect 发送 DISCONNECT
 func (c *Client) SendDisconnect(reasonCode byte) error {
 	data := protocol.EncodeDisconnect(c.Version, reasonCode)
-	_, err := c.Conn.Write(data)
-	return err
+	return c.write(data)
 }
 
 // NextPacketID 获取下一个 Packet ID
@@ -306,13 +308,28 @@ func (c *Client) Disconnect() {
 	c.connected = false
 	onDisconnect := c.onDisconnect
 	c.mu.Unlock()
-	
+
 	if c.Conn != nil {
 		c.Conn.Close()
 	}
-	
+
 	if onDisconnect != nil {
 		onDisconnect(c)
+	}
+}
+
+// DisconnectWithoutCallback 断开连接但不触发回调（用于避免死锁）
+func (c *Client) DisconnectWithoutCallback() {
+	c.mu.Lock()
+	if !c.connected {
+		c.mu.Unlock()
+		return
+	}
+	c.connected = false
+	c.mu.Unlock()
+
+	if c.Conn != nil {
+		c.Conn.Close()
 	}
 }
 

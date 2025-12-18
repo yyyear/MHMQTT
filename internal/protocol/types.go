@@ -1,11 +1,100 @@
 package protocol
 
+import "sync"
+
 // MQTT 协议版本
 const (
 	Version31  byte = 3
 	Version311 byte = 4
 	Version50  byte = 5
 )
+
+// 对象池 - 用于复用消息对象，减少 GC 压力
+var (
+	publishMessagePool = sync.Pool{
+		New: func() interface{} {
+			return &PublishMessage{}
+		},
+	}
+
+	messagePool = sync.Pool{
+		New: func() interface{} {
+			return &Message{}
+		},
+	}
+
+	// 字节切片池 - 用于复用消息 payload
+	byteSlicePool = sync.Pool{
+		New: func() interface{} {
+			// 预分配 1KB 的切片
+			buf := make([]byte, 0, 1024)
+			return &buf
+		},
+	}
+)
+
+// AcquirePublishMessage 从池中获取 PublishMessage
+func AcquirePublishMessage() *PublishMessage {
+	return publishMessagePool.Get().(*PublishMessage)
+}
+
+// ReleasePublishMessage 将 PublishMessage 放回池中
+func ReleasePublishMessage(msg *PublishMessage) {
+	if msg == nil {
+		return
+	}
+	// 重置字段
+	msg.Topic = ""
+	msg.Payload = nil
+	msg.QoS = 0
+	msg.Retain = false
+	msg.PacketID = 0
+	msg.Dup = false
+	msg.Properties = nil
+	publishMessagePool.Put(msg)
+}
+
+// AcquireMessage 从池中获取 Message
+func AcquireMessage() *Message {
+	return messagePool.Get().(*Message)
+}
+
+// ReleaseMessage 将 Message 放回池中
+func ReleaseMessage(msg *Message) {
+	if msg == nil {
+		return
+	}
+	// 重置字段
+	msg.Topic = ""
+	msg.Payload = nil
+	msg.QoS = 0
+	msg.Retain = false
+	msg.PacketID = 0
+	msg.Dup = false
+	msg.Properties = nil
+	messagePool.Put(msg)
+}
+
+// AcquireByteSlice 从池中获取字节切片
+func AcquireByteSlice(size int) []byte {
+	bp := byteSlicePool.Get().(*[]byte)
+	buf := *bp
+	if cap(buf) >= size {
+		return buf[:size]
+	}
+	// 如果容量不够，创建新的更大的切片
+	byteSlicePool.Put(bp)
+	return make([]byte, size)
+}
+
+// ReleaseByteSlice 将字节切片放回池中
+func ReleaseByteSlice(buf []byte) {
+	if buf == nil || cap(buf) > 64*1024 { // 不缓存超过 64KB 的切片
+		return
+	}
+	buf = buf[:0]
+	byteSlicePool.Put(&buf)
+}
 
 // 消息类型
 const (

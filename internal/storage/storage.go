@@ -57,12 +57,9 @@ type BoltStorage struct {
 // NewBoltStorage 创建新的 BoltDB 存储
 func NewBoltStorage(pathLog string) (*BoltStorage, error) {
 	path := pathLog
-	YY.Debug("opening boltdb storage at path: " + path)
 	// 创建数据库文件
-	f, err := os.Stat(path)
-	if f != nil {
-		YY.Debug("file info: "+f.Name(), err)
-	}
+	_, err := os.Stat(path)
+
 	if err != nil {
 		YY.Debug("stat file error: " + err.Error())
 	}

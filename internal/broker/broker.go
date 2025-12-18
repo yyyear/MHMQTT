@@ -178,13 +178,21 @@ func (b *Broker) handleConnection(conn net.Conn) {
 	}
 	YY.Debug("检查客户端 ID:", connectMsg.ClientID)
 
-	// 检查是否已存在连接
-
+	// 检查是否已存在连接（需要先获取锁读取，然后释放锁再断开）
+	b.mu.RLock()
 	existingClient, exists := b.clients[connectMsg.ClientID]
+	b.mu.RUnlock()
+
 	if exists && existingClient.IsConnected() {
-		// 断开旧连接
+		// 断开旧连接 - 注意：不能在持有锁的情况下调用 Disconnect
+		// 因为 Disconnect 的回调 onClientDisconnect 也会获取锁
+		existingClient.DisconnectWithoutCallback()
+		// 手动从 clients 中移除旧连接
 		b.mu.Lock()
-		existingClient.Disconnect()
+		if old, ok := b.clients[connectMsg.ClientID]; ok && old == existingClient {
+			delete(b.clients, connectMsg.ClientID)
+			b.clientPool.Remove(connectMsg.ClientID)
+		}
 		b.mu.Unlock()
 	}
 
@@ -491,27 +499,24 @@ func (b *Broker) keepAliveChecker() {
 	ticker := time.NewTicker(30 * time.Second)
 	defer ticker.Stop()
 
-	for {
-		select {
-		case <-ticker.C:
-			if !b.isRunning() {
-				return
-			}
+	for range ticker.C {
+		if !b.isRunning() {
+			return
+		}
 
-			b.mu.RLock()
-			clients := make([]*client.Client, 0, len(b.clients))
-			for _, c := range b.clients {
-				clients = append(clients, c)
-			}
-			b.mu.RUnlock()
+		b.mu.RLock()
+		clients := make([]*client.Client, 0, len(b.clients))
+		for _, c := range b.clients {
+			clients = append(clients, c)
+		}
+		b.mu.RUnlock()
 
-			for _, c := range clients {
-				if c.KeepAlive > 0 {
-					lastPing := c.GetLastPing()
-					timeout := time.Duration(c.KeepAlive) * time.Second * 3 / 2
-					if time.Since(lastPing) > timeout {
-						c.Disconnect()
-					}
+		for _, c := range clients {
+			if c.KeepAlive > 0 {
+				lastPing := c.GetLastPing()
+				timeout := time.Duration(c.KeepAlive) * time.Second * 3 / 2
+				if time.Since(lastPing) > timeout {
+					c.Disconnect()
 				}
 			}
 		}
