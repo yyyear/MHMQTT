@@ -36,6 +36,41 @@ go run main.go
 
 编辑 `config.yaml` 文件来配置 broker 参数。
 
+## Docker 部署
+
+### 构建镜像
+
+```bash
+docker build -t mhmqtt .
+```
+
+### 运行容器
+
+```bash
+docker run -d \
+  -p 1883:1883 \
+  -p 8083:8083 \
+  -p 8080:8080 \
+  -v $(pwd)/config.yaml:/app/config.yaml \
+  -v $(pwd)/data:/app/data \
+  -v $(pwd)/logs:/app/logs \
+  --name mhmqtt \
+  mhmqtt
+```
+
+## 自动化分发 (CI/CD)
+
+本项目已配置 GitHub Actions 自动构建和发布 Docker 镜像。
+
+### 配置步骤
+
+1. 在 GitHub 仓库设置中，进入 `Settings` -> `Secrets and variables` -> `Actions`。
+2. 添加以下 Repository Secrets：
+   - `DOCKER_USERNAME`: 你的 Docker Hub 用户名
+   - `DOCKER_PASSWORD`: 你的 Docker Hub 访问令牌 (Access Token) 或密码
+
+配置完成后，每次推送到 `main` 分支或打上 `v*.*.*` 标签时，会自动构建并推送到 Docker Hub。
+
 ## API 文档
 
 HTTP API 默认监听在 `:8080` 端口。
@@ -73,4 +108,3 @@ Content-Type: application/json
 ## 许可证
 
 MIT
-

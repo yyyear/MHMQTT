@@ -5,8 +5,9 @@ import (
 	"fmt"
 	"time"
 	
-	"go.etcd.io/bbolt"
 	"mhmqtt/internal/protocol"
+	
+	"go.etcd.io/bbolt"
 )
 
 // Storage 存储接口
@@ -75,7 +76,7 @@ func NewBoltStorage(path string) (*BoltStorage, error) {
 	})
 	
 	if err != nil {
-		db.Close()
+		_ = db.Close()
 		return nil, err
 	}
 	
@@ -262,7 +263,7 @@ func (s *BoltStorage) GetPendingMessages(clientID string) (map[uint16]*protocol.
 			// 从 key 中提取 packetID
 			keyStr := string(k)
 			var packetID uint16
-			fmt.Sscanf(keyStr, clientID+":%d", &packetID)
+			_, _ = fmt.Sscanf(keyStr, clientID+":%d", &packetID)
 			messages[packetID] = &msg
 		}
 		return nil

@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	
+	"github.com/yyyear/YY"
 )
 
 var (
@@ -176,11 +178,12 @@ func ParseConnect(data []byte) (*ConnectMessage, error) {
 	if msgType != CONNECT {
 		return nil, fmt.Errorf("不是 CONNECT 消息")
 	}
-	
+	YY.Debug("解析 CONNECT 消息:", string(data))
 	offset := 1
 	// 跳过剩余长度
 	_, n, err := readRemainingLength(data, offset)
 	if err != nil {
+		YY.Error("读取剩余长度失败:", err)
 		return nil, err
 	}
 	offset += n
@@ -190,11 +193,13 @@ func ParseConnect(data []byte) (*ConnectMessage, error) {
 	// 读取协议名
 	msg.ProtocolName, offset, err = ReadString(data, offset)
 	if err != nil {
+		YY.Error("读取协议名失败:", err)
 		return nil, err
 	}
 	
 	// 读取协议版本
 	if offset >= len(data) {
+		YY.Error("读取协议版本失败: 数据不足")
 		return nil, ErrInvalidPacket
 	}
 	msg.ProtocolVersion = data[offset]
@@ -202,6 +207,7 @@ func ParseConnect(data []byte) (*ConnectMessage, error) {
 	
 	// 读取连接标志
 	if offset >= len(data) {
+		YY.Error("读取连接标志失败: 数据不足")
 		return nil, ErrInvalidPacket
 	}
 	flags := data[offset]
@@ -216,6 +222,7 @@ func ParseConnect(data []byte) (*ConnectMessage, error) {
 	// 读取 Keep Alive
 	msg.KeepAlive, offset, err = ReadUint16(data, offset)
 	if err != nil {
+		YY.Error("读取 Keep Alive 失败:", err)
 		return nil, err
 	}
 	
@@ -224,12 +231,14 @@ func ParseConnect(data []byte) (*ConnectMessage, error) {
 		// 跳过属性长度
 		propLen, n, err := readVariableByteInteger(data, offset)
 		if err != nil {
+			YY.Error("读取属性长度失败:", err)
 			return nil, err
 		}
 		offset += n
 		if propLen > 0 {
 			msg.Properties, offset, err = ReadProperties(data, offset, int(propLen))
 			if err != nil {
+				YY.Error("读取属性失败:", err)
 				return nil, err
 			}
 		}
@@ -238,6 +247,7 @@ func ParseConnect(data []byte) (*ConnectMessage, error) {
 	// 读取 Client ID
 	msg.ClientID, offset, err = ReadString(data, offset)
 	if err != nil {
+		YY.Error("读取 Client ID 失败:", err)
 		return nil, err
 	}
 	
@@ -245,10 +255,12 @@ func ParseConnect(data []byte) (*ConnectMessage, error) {
 	if msg.WillFlag {
 		msg.WillTopic, offset, err = ReadString(data, offset)
 		if err != nil {
+			YY.Error("读取 Will 主题失败:", err)
 			return nil, err
 		}
 		msg.WillMessage, offset, err = ReadBytes(data, offset)
 		if err != nil {
+			YY.Error("读取 Will 消息失败:", err)
 			return nil, err
 		}
 	}
@@ -256,7 +268,9 @@ func ParseConnect(data []byte) (*ConnectMessage, error) {
 	// 读取用户名
 	if msg.UsernameFlag {
 		msg.Username, offset, err = ReadString(data, offset)
+		YY.Debug("读取用户名:", msg.Username)
 		if err != nil {
+			YY.Error("读取用户名失败:", err)
 			return nil, err
 		}
 	}
@@ -264,7 +278,9 @@ func ParseConnect(data []byte) (*ConnectMessage, error) {
 	// 读取密码
 	if msg.PasswordFlag {
 		msg.Password, offset, err = ReadBytes(data, offset)
+		YY.Debug("读取密码:", string(msg.Password))
 		if err != nil {
+			YY.Error("读取密码失败:", err)
 			return nil, err
 		}
 	}
@@ -344,13 +360,13 @@ func ReadProperties(data []byte, offset int, maxLen int) (*Properties, int, erro
 		if offset >= len(data) {
 			break
 		}
-		
+		YY.Debug("当前偏移量:", offset, startOffset)
 		propID, n, err := readVariableByteInteger(data, offset)
 		if err != nil {
 			return nil, startOffset, err
 		}
 		offset += n
-		
+		YY.Debug("读取属性 ID:", propID)
 		switch propID {
 		case 1: // Payload Format Indicator
 			if offset >= len(data) {
