@@ -26,14 +26,14 @@ func NewTrieMatcher() *TrieMatcher {
 func (m *TrieMatcher) Match(topic, pattern string) bool {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	
+
 	return m.match(topic, pattern)
 }
 
 func (m *TrieMatcher) match(topic, pattern string) bool {
 	topicParts := strings.Split(topic, "/")
 	patternParts := strings.Split(pattern, "/")
-	
+
 	return m.matchParts(topicParts, patternParts)
 }
 
@@ -41,15 +41,15 @@ func (m *TrieMatcher) matchParts(topicParts, patternParts []string) bool {
 	if len(patternParts) == 0 {
 		return len(topicParts) == 0
 	}
-	
+
 	if len(topicParts) == 0 {
 		// 只有 # 可以匹配空
 		return len(patternParts) == 1 && patternParts[0] == "#"
 	}
-	
+
 	patternPart := patternParts[0]
 	topicPart := topicParts[0]
-	
+
 	switch patternPart {
 	case "#":
 		// # 必须位于最后
@@ -71,7 +71,7 @@ func (m *TrieMatcher) Validate(topic string) bool {
 	if topic == "" {
 		return false
 	}
-	
+
 	// 不能包含空字符串段
 	parts := strings.Split(topic, "/")
 	for _, part := range parts {
@@ -80,7 +80,7 @@ func (m *TrieMatcher) Validate(topic string) bool {
 			return false
 		}
 	}
-	
+
 	// 检查通配符使用
 	hasHash := false
 	for i, part := range parts {
@@ -95,16 +95,17 @@ func (m *TrieMatcher) Validate(topic string) bool {
 			return false
 		}
 	}
-	
+
 	return true
 }
 
 // Manager 主题管理器
 type Manager struct {
 	mu          sync.RWMutex
-	subscribers map[string]map[string]byte // topic -> clientID -> QoS
+	subscribers map[string]map[string]byte            // topic -> clientID -> QoS
 	sharedSubs  map[string]map[string]map[string]byte // group -> filter -> clientID -> QoS
 	rrIndex     map[string]int                        // round-robin index per group|filter
+	rrMu        sync.Mutex
 	matcher     Matcher
 }
 
@@ -143,7 +144,7 @@ func isSharedTopic(topic string) (group, filter string, ok bool) {
 func (m *Manager) Subscribe(clientID, topic string, qos byte) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	
+
 	if group, filter, shared := isSharedTopic(topic); shared {
 		if !m.matcher.Validate(filter) {
 			return
@@ -157,11 +158,11 @@ func (m *Manager) Subscribe(clientID, topic string, qos byte) {
 		m.sharedSubs[group][filter][clientID] = qos
 		return
 	}
-	
+
 	if !m.matcher.Validate(topic) {
 		return
 	}
-	
+
 	if m.subscribers[topic] == nil {
 		m.subscribers[topic] = make(map[string]byte)
 	}
@@ -172,7 +173,7 @@ func (m *Manager) Subscribe(clientID, topic string, qos byte) {
 func (m *Manager) Unsubscribe(clientID, topic string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	
+
 	if group, filter, shared := isSharedTopic(topic); shared {
 		if groups, ok := m.sharedSubs[group]; ok {
 			if subs, ok := groups[filter]; ok {
@@ -188,7 +189,7 @@ func (m *Manager) Unsubscribe(clientID, topic string) {
 		}
 		return
 	}
-	
+
 	if subscribers, ok := m.subscribers[topic]; ok {
 		delete(subscribers, clientID)
 		if len(subscribers) == 0 {
@@ -201,7 +202,7 @@ func (m *Manager) Unsubscribe(clientID, topic string) {
 func (m *Manager) UnsubscribeAll(clientID string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	
+
 	for topic, subscribers := range m.subscribers {
 		delete(subscribers, clientID)
 		if len(subscribers) == 0 {
@@ -214,16 +215,16 @@ func (m *Manager) UnsubscribeAll(clientID string) {
 func (m *Manager) GetSubscribers(topic string) map[string]byte {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	
+
 	subscribers := make(map[string]byte)
-	
+
 	// 精确匹配
 	if subs, ok := m.subscribers[topic]; ok {
 		for clientID, qos := range subs {
 			subscribers[clientID] = qos
 		}
 	}
-	
+
 	// 通配符匹配
 	for pattern, subs := range m.subscribers {
 		if pattern != topic && m.matcher.Match(topic, pattern) {
@@ -235,7 +236,7 @@ func (m *Manager) GetSubscribers(topic string) map[string]byte {
 			}
 		}
 	}
-	
+
 	// 共享订阅匹配：每个 group/filter 只选一个客户端（轮询）
 	for group, filters := range m.sharedSubs {
 		for filter, subs := range filters {
@@ -254,9 +255,11 @@ func (m *Manager) GetSubscribers(topic string) map[string]byte {
 					}
 				}
 				key := group + "|" + filter
+				m.rrMu.Lock()
 				idx := m.rrIndex[key] % len(clientIDs)
 				selected := clientIDs[idx]
 				m.rrIndex[key] = (m.rrIndex[key] + 1) % len(clientIDs)
+				m.rrMu.Unlock()
 				qos := subs[selected]
 				// 如果已存在，取较大的 QoS
 				if existingQoS, ok := subscribers[selected]; !ok || qos > existingQoS {
@@ -265,7 +268,7 @@ func (m *Manager) GetSubscribers(topic string) map[string]byte {
 			}
 		}
 	}
-	
+
 	return subscribers
 }
 
@@ -273,14 +276,14 @@ func (m *Manager) GetSubscribers(topic string) map[string]byte {
 func (m *Manager) GetSubscriptions(clientID string) map[string]byte {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	
+
 	subscriptions := make(map[string]byte)
 	for topic, subscribers := range m.subscribers {
 		if qos, ok := subscribers[clientID]; ok {
 			subscriptions[topic] = qos
 		}
 	}
-	
+
 	return subscriptions
 }
 
