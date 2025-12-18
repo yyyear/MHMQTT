@@ -7,7 +7,9 @@ ENV GO111MODULE=on \
     GOOS=linux \
     GOARCH=amd64 \
     GOPROXY=https://goproxy.cn
-
+ENV https_proxy=http://192.168.1.248:7890 \
+    http_proxy=http://192.168.1.248:7890 \
+    all_proxy=socks5://192.168.1.248:7890
 # Set working directory
 WORKDIR /app
 
