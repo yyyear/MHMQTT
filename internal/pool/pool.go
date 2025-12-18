@@ -8,12 +8,12 @@ import (
 
 // ConnectionPool 连接池
 type ConnectionPool struct {
-	mu       sync.RWMutex
-	clients  map[string]interface{} // clientID -> client
-	maxSize  int
-	timeout  time.Duration
-	ctx      context.Context
-	cancel   context.CancelFunc
+	mu      sync.RWMutex
+	clients map[string]interface{} // clientID -> client
+	maxSize int
+	timeout time.Duration
+	ctx     context.Context
+	cancel  context.CancelFunc
 }
 
 // NewConnectionPool 创建连接池
@@ -35,9 +35,6 @@ func NewConnectionPool(maxSize int, timeout time.Duration) *ConnectionPool {
 
 // Add 添加连接
 func (p *ConnectionPool) Add(clientID string, client interface{}) bool {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	
 	if len(p.clients) >= p.maxSize {
 		return false
 	}
@@ -106,4 +103,3 @@ func (p *ConnectionPool) Close() {
 	
 	p.clients = make(map[string]interface{})
 }
-

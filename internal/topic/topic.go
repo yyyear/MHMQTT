@@ -180,7 +180,10 @@ func (m *Manager) Unsubscribe(clientID, topic string) {
 				delete(subs, clientID)
 				if len(subs) == 0 {
 					delete(groups, filter)
+					// 删除轮询索引需要加锁
+					m.rrMu.Lock()
 					delete(m.rrIndex, group+"|"+filter)
+					m.rrMu.Unlock()
 				}
 			}
 			if len(groups) == 0 {
@@ -213,23 +216,47 @@ func (m *Manager) UnsubscribeAll(clientID string) {
 
 // GetSubscribers 获取订阅者
 func (m *Manager) GetSubscribers(topic string) map[string]byte {
+	// 快照拷贝，尽快释放读锁，避免阻塞写操作（Subscribe/Unsubscribe）
 	m.mu.RLock()
-	defer m.mu.RUnlock()
+	exact := make(map[string]byte)
+	if subs, ok := m.subscribers[topic]; ok {
+		for clientID, qos := range subs {
+			exact[clientID] = qos
+		}
+	}
+	patterns := make(map[string]map[string]byte)
+	for pattern, subs := range m.subscribers {
+		// 拷贝内层 map，避免并发访问
+		cp := make(map[string]byte, len(subs))
+		for cid, qos := range subs {
+			cp[cid] = qos
+		}
+		patterns[pattern] = cp
+	}
+	shared := make(map[string]map[string]map[string]byte)
+	for group, filters := range m.sharedSubs {
+		shared[group] = make(map[string]map[string]byte)
+		for filter, subs := range filters {
+			cp := make(map[string]byte, len(subs))
+			for cid, qos := range subs {
+				cp[cid] = qos
+			}
+			shared[group][filter] = cp
+		}
+	}
+	m.mu.RUnlock()
 
 	subscribers := make(map[string]byte)
 
-	// 精确匹配
-	if subs, ok := m.subscribers[topic]; ok {
-		for clientID, qos := range subs {
-			subscribers[clientID] = qos
-		}
+	// 精确匹配（来自快照）
+	for clientID, qos := range exact {
+		subscribers[clientID] = qos
 	}
 
-	// 通配符匹配
-	for pattern, subs := range m.subscribers {
+	// 通配符匹配（来自快照）
+	for pattern, subs := range patterns {
 		if pattern != topic && m.matcher.Match(topic, pattern) {
 			for clientID, qos := range subs {
-				// 如果已存在，取较大的 QoS
 				if existingQoS, ok := subscribers[clientID]; !ok || qos > existingQoS {
 					subscribers[clientID] = qos
 				}
@@ -237,16 +264,14 @@ func (m *Manager) GetSubscribers(topic string) map[string]byte {
 		}
 	}
 
-	// 共享订阅匹配：每个 group/filter 只选一个客户端（轮询）
-	for group, filters := range m.sharedSubs {
+	// 共享订阅匹配：每个 group/filter 只选一个客户端（轮询）（来自快照）
+	for group, filters := range shared {
 		for filter, subs := range filters {
 			if m.matcher.Match(topic, filter) && len(subs) > 0 {
-				// 生成稳定的客户端列表（按 clientID 排序）
 				clientIDs := make([]string, 0, len(subs))
 				for cid := range subs {
 					clientIDs = append(clientIDs, cid)
 				}
-				// 简单的插入排序避免引入排序库
 				for i := 1; i < len(clientIDs); i++ {
 					j := i
 					for j > 0 && clientIDs[j-1] > clientIDs[j] {
@@ -261,7 +286,6 @@ func (m *Manager) GetSubscribers(topic string) map[string]byte {
 				m.rrIndex[key] = (m.rrIndex[key] + 1) % len(clientIDs)
 				m.rrMu.Unlock()
 				qos := subs[selected]
-				// 如果已存在，取较大的 QoS
 				if existingQoS, ok := subscribers[selected]; !ok || qos > existingQoS {
 					subscribers[selected] = qos
 				}

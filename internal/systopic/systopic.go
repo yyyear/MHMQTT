@@ -8,10 +8,10 @@ import (
 
 // SystemTopic 系统主题管理器
 type SystemTopic struct {
-	mu            sync.RWMutex
-	stats         *Stats
+	mu             sync.RWMutex
+	stats          *Stats
 	updateInterval time.Duration
-	stopChan      chan struct{}
+	stopChan       chan struct{}
 }
 
 // Stats 统计信息
@@ -24,7 +24,7 @@ type Stats struct {
 	ClientsConnected    uint32
 	ClientsDisconnected uint32
 	MessagesStored      uint32
-	MessagesDropped    uint32
+	MessagesDropped     uint32
 }
 
 // NewSystemTopic 创建系统主题管理器
@@ -85,8 +85,6 @@ func (s *SystemTopic) IncrementMessagesSent() {
 
 // IncrementClientsConnected 增加连接客户端数
 func (s *SystemTopic) IncrementClientsConnected() {
-	s.mu.Lock()
-	defer s.mu.Unlock()
 	s.stats.ClientsConnected++
 }
 
@@ -113,8 +111,6 @@ func (s *SystemTopic) IncrementMessagesDropped() {
 
 // SetClientsConnected 设置当前连接客户端数
 func (s *SystemTopic) SetClientsConnected(count uint32) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
 	s.stats.ClientsConnected = count
 }
 
@@ -127,17 +123,17 @@ func (s *SystemTopic) GetSystemTopics() map[string]string {
 	uptime := time.Since(stats.StartTime)
 	
 	return map[string]string{
-		"$SYS/broker/version":           "MHMQTT/1.0",
-		"$SYS/broker/uptime":            fmt.Sprintf("%d", int(uptime.Seconds())),
-		"$SYS/broker/timestamp":         fmt.Sprintf("%d", time.Now().Unix()),
-		"$SYS/broker/clients/connected": fmt.Sprintf("%d", stats.ClientsConnected),
+		"$SYS/broker/version":              "MHMQTT/1.0",
+		"$SYS/broker/uptime":               fmt.Sprintf("%d", int(uptime.Seconds())),
+		"$SYS/broker/timestamp":            fmt.Sprintf("%d", time.Now().Unix()),
+		"$SYS/broker/clients/connected":    fmt.Sprintf("%d", stats.ClientsConnected),
 		"$SYS/broker/clients/disconnected": fmt.Sprintf("%d", stats.ClientsDisconnected),
-		"$SYS/broker/messages/received": fmt.Sprintf("%d", stats.MessagesReceived),
-		"$SYS/broker/messages/sent":     fmt.Sprintf("%d", stats.MessagesSent),
-		"$SYS/broker/bytes/received":     fmt.Sprintf("%d", stats.BytesReceived),
-		"$SYS/broker/bytes/sent":        fmt.Sprintf("%d", stats.BytesSent),
-		"$SYS/broker/messages/stored":   fmt.Sprintf("%d", stats.MessagesStored),
-		"$SYS/broker/messages/dropped":   fmt.Sprintf("%d", stats.MessagesDropped),
+		"$SYS/broker/messages/received":    fmt.Sprintf("%d", stats.MessagesReceived),
+		"$SYS/broker/messages/sent":        fmt.Sprintf("%d", stats.MessagesSent),
+		"$SYS/broker/bytes/received":       fmt.Sprintf("%d", stats.BytesReceived),
+		"$SYS/broker/bytes/sent":           fmt.Sprintf("%d", stats.BytesSent),
+		"$SYS/broker/messages/stored":      fmt.Sprintf("%d", stats.MessagesStored),
+		"$SYS/broker/messages/dropped":     fmt.Sprintf("%d", stats.MessagesDropped),
 	}
 }
 
@@ -155,4 +151,3 @@ func (s *SystemTopic) updateLoop() {
 		}
 	}
 }
-
