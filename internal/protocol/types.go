@@ -35,19 +35,19 @@ const (
 
 // 连接返回码 (v3.1.1)
 const (
-	ConnAckAccepted                byte = 0
-	ConnAckUnacceptableProtocol    byte = 1
-	ConnAckIdentifierRejected      byte = 2
-	ConnAckServerUnavailable       byte = 3
-	ConnAckBadUsernamePassword     byte = 4
-	ConnAckNotAuthorized           byte = 5
+	ConnAckAccepted             byte = 0
+	ConnAckUnacceptableProtocol byte = 1
+	ConnAckIdentifierRejected   byte = 2
+	ConnAckServerUnavailable    byte = 3
+	ConnAckBadUsernamePassword  byte = 4
+	ConnAckNotAuthorized        byte = 5
 )
 
 // 连接返回码 (v5.0)
 const (
-	ConnAckV5Success                    byte = 0
-	ConnAckV5UnspecifiedError           byte = 128
-	ConnAckV5MalformedPacket            byte = 129
+	ConnAckV5Success                     byte = 0
+	ConnAckV5UnspecifiedError            byte = 128
+	ConnAckV5MalformedPacket             byte = 129
 	ConnAckV5ProtocolError               byte = 130
 	ConnAckV5ImplementationSpecificError byte = 131
 	ConnAckV5UnsupportedProtocolVersion  byte = 132
@@ -71,12 +71,12 @@ const (
 
 // 消息结构
 type Message struct {
-	Topic    string
-	Payload  []byte
-	QoS      byte
-	Retain   bool
-	PacketID uint16
-	Dup      bool
+	Topic      string
+	Payload    []byte
+	QoS        byte
+	Retain     bool
+	PacketID   uint16
+	Dup        bool
 	Properties *Properties // v5.0 属性
 }
 
@@ -84,6 +84,7 @@ type Message struct {
 type Properties struct {
 	PayloadFormatIndicator *byte
 	MessageExpiryInterval  *uint32
+	SessionExpiryInterval  *uint32
 	ContentType            string
 	ResponseTopic          string
 	CorrelationData        []byte
@@ -113,28 +114,27 @@ type ConnectMessage struct {
 
 // Subscribe 消息
 type SubscribeMessage struct {
-	PacketID uint16
-	Topics   []TopicSubscription
+	PacketID   uint16
+	Topics     []TopicSubscription
 	Properties *Properties // v5.0
 }
 
 // TopicSubscription 订阅主题
 type TopicSubscription struct {
-	Topic    string
-	QoS      byte
-	NoLocal  bool // v5.0
+	Topic             string
+	QoS               byte
+	NoLocal           bool // v5.0
 	RetainAsPublished bool // v5.0
 	RetainHandling    byte // v5.0
 }
 
 // Publish 消息
 type PublishMessage struct {
-	Topic     string
-	Payload   []byte
-	QoS       byte
-	Retain    bool
-	PacketID  uint16
-	Dup       bool
+	Topic      string
+	Payload    []byte
+	QoS        byte
+	Retain     bool
+	PacketID   uint16
+	Dup        bool
 	Properties *Properties // v5.0
 }
-
