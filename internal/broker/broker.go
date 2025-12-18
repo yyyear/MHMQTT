@@ -4,9 +4,10 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"strings"
 	"sync"
 	"time"
-	
+
 	"mhmqtt/internal/client"
 	"mhmqtt/internal/cluster"
 	"mhmqtt/internal/config"
@@ -16,28 +17,28 @@ import (
 	"mhmqtt/internal/storage"
 	"mhmqtt/internal/systopic"
 	"mhmqtt/internal/topic"
-	
+
 	"github.com/yyyear/YY"
 )
 
 // Broker MQTT Broker
 type Broker struct {
 	config *config.Config
-	
+
 	// 组件
 	storage      storage.Storage
 	topicManager *topic.Manager
 	clientPool   *pool.ConnectionPool
 	sysTopic     *systopic.SystemTopic
 	cluster      *cluster.Cluster
-	
+
 	// 状态
 	mu         sync.RWMutex
 	clients    map[string]*client.Client
 	listener   net.Listener
 	wsListener net.Listener
 	running    bool
-	
+
 	// 批处理
 	batchProcessor *message.BatchProcessor
 }
@@ -49,7 +50,7 @@ func NewBroker(cfg *config.Config) *Broker {
 	if err != nil {
 		log.Printf("警告: 创建存储失败: %v", err)
 	}
-	
+
 	b := &Broker{
 		config:       cfg,
 		storage:      stor,
@@ -57,13 +58,13 @@ func NewBroker(cfg *config.Config) *Broker {
 		clients:      make(map[string]*client.Client),
 		sysTopic:     systopic.NewSystemTopic(10 * time.Second),
 	}
-	
+
 	// 创建连接池
 	b.clientPool = pool.NewConnectionPool(
 		cfg.Broker.MaxClients,
 		time.Duration(cfg.Broker.KeepAlive)*time.Second,
 	)
-	
+
 	// 创建批处理器
 	b.batchProcessor = message.NewBatchProcessor(
 		100,                  // 批大小
@@ -71,12 +72,12 @@ func NewBroker(cfg *config.Config) *Broker {
 		b.processBatch,
 	)
 	b.batchProcessor.Start()
-	
+
 	// 创建集群
 	if cfg.Broker.Cluster.Enabled {
 		b.cluster = cluster.NewCluster(cfg.Broker.Cluster, b)
 	}
-	
+
 	return b
 }
 
@@ -84,39 +85,39 @@ func NewBroker(cfg *config.Config) *Broker {
 func (b *Broker) Start() error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	
+
 	if b.running {
 		return fmt.Errorf("broker 已在运行")
 	}
-	
+
 	// 启动系统主题
 	b.sysTopic.Start()
-	
+
 	// 启动集群
 	if b.cluster != nil {
 		if err := b.cluster.Start(); err != nil {
 			return fmt.Errorf("启动集群失败: %w", err)
 		}
 	}
-	
+
 	// 启动 MQTT 监听
 	listener, err := net.Listen("tcp", b.config.Broker.Address)
 	if err != nil {
 		return fmt.Errorf("监听 MQTT 端口失败: %w", err)
 	}
 	b.listener = listener
-	
+
 	// 启动 WebSocket 监听（简化处理，使用普通 TCP）
 	// 实际实现中需要使用 gorilla/websocket
-	
+
 	b.running = true
-	
+
 	// 启动接受连接
 	go b.acceptConnections()
-	
+
 	// 启动 Keep Alive 检查
 	go b.keepAliveChecker()
-	
+
 	return nil
 }
 
@@ -131,7 +132,7 @@ func (b *Broker) acceptConnections() {
 			}
 			return
 		}
-		
+
 		go b.handleConnection(conn)
 	}
 }
@@ -147,7 +148,7 @@ func (b *Broker) handleConnection(conn net.Conn) {
 		return
 	}
 	YY.Debug("读取 CONNECT 消息:", string(packet))
-	
+
 	// 解析 CONNECT
 	connectMsg, err := protocol.ParseConnect(packet)
 	if err != nil {
@@ -155,7 +156,7 @@ func (b *Broker) handleConnection(conn net.Conn) {
 		return
 	}
 	YY.Debug("解析 CONNECT 消息:", connectMsg)
-	
+
 	// 验证协议版本
 	if connectMsg.ProtocolVersion != protocol.Version31 &&
 		connectMsg.ProtocolVersion != protocol.Version311 &&
@@ -164,7 +165,7 @@ func (b *Broker) handleConnection(conn net.Conn) {
 		return
 	}
 	YY.Debug("验证协议版本:", connectMsg.ProtocolVersion)
-	
+
 	// 检查客户端 ID
 	if connectMsg.ClientID == "" {
 		if connectMsg.ProtocolVersion == protocol.Version50 {
@@ -176,7 +177,7 @@ func (b *Broker) handleConnection(conn net.Conn) {
 		}
 	}
 	YY.Debug("检查客户端 ID:", connectMsg.ClientID)
-	
+
 	// 检查是否已存在连接
 	b.mu.Lock()
 	existingClient, exists := b.clients[connectMsg.ClientID]
@@ -186,7 +187,7 @@ func (b *Broker) handleConnection(conn net.Conn) {
 	}
 	b.mu.Unlock()
 	YY.Debug("检查是否已存在连接:", existingClient)
-	
+
 	// 创建客户端
 	c := client.NewClient(conn, b.storage)
 	c.ID = connectMsg.ClientID
@@ -194,7 +195,7 @@ func (b *Broker) handleConnection(conn net.Conn) {
 	c.KeepAlive = connectMsg.KeepAlive
 	c.CleanSession = connectMsg.CleanSession
 	YY.Debug("设置 CleanSession:", c.CleanSession)
-	
+
 	// 处理 Will 消息
 	if connectMsg.WillFlag {
 		c.WillMessage = &protocol.Message{
@@ -205,7 +206,7 @@ func (b *Broker) handleConnection(conn net.Conn) {
 		}
 	}
 	YY.Debug("处理 Will 消息:", c.WillMessage)
-	
+
 	// 设置回调
 	c.SetCallbacks(
 		b.onClientDisconnect,
@@ -215,7 +216,7 @@ func (b *Broker) handleConnection(conn net.Conn) {
 		b.onPing,
 	)
 	YY.Debug("设置回调:", c)
-	
+
 	// 恢复会话
 	sessionPresent := false
 	if !c.CleanSession && b.storage != nil {
@@ -231,7 +232,7 @@ func (b *Broker) handleConnection(conn net.Conn) {
 		}
 		YY.Debug("恢复会话:", sess)
 	}
-	
+
 	// 发送 CONNACK
 	var returnCode byte
 	if c.Version == protocol.Version50 {
@@ -243,7 +244,7 @@ func (b *Broker) handleConnection(conn net.Conn) {
 		return
 	}
 	YY.Debug("发送 CONNACK:", returnCode, sessionPresent)
-	
+
 	// 保存会话
 	if b.storage != nil {
 		sess := &storage.Session{
@@ -256,7 +257,7 @@ func (b *Broker) handleConnection(conn net.Conn) {
 		}
 		b.storage.SaveSession(sess)
 	}
-	
+
 	// 添加到连接池
 	b.mu.Lock()
 	b.clients[c.ID] = c
@@ -277,12 +278,12 @@ func (b *Broker) onClientDisconnect(c *client.Client) {
 	b.sysTopic.IncrementClientsDisconnected()
 	b.sysTopic.SetClientsConnected(uint32(len(b.clients)))
 	b.mu.Unlock()
-	
+
 	// 发送 Will 消息
 	if c.WillMessage != nil {
 		b.publishMessage(c.WillMessage)
 	}
-	
+
 	// 清理会话
 	if c.CleanSession && b.storage != nil {
 		b.storage.DeleteSession(c.ID)
@@ -294,7 +295,7 @@ func (b *Broker) onClientDisconnect(c *client.Client) {
 func (b *Broker) onPublish(c *client.Client, msg *protocol.PublishMessage) {
 	b.sysTopic.IncrementMessagesReceived()
 	b.sysTopic.IncrementBytesReceived(uint64(len(msg.Payload)))
-	
+
 	// 创建消息
 	pubMsg := &protocol.Message{
 		Topic:    msg.Topic,
@@ -303,7 +304,7 @@ func (b *Broker) onPublish(c *client.Client, msg *protocol.PublishMessage) {
 		Retain:   msg.Retain,
 		PacketID: msg.PacketID,
 	}
-	
+
 	// 保存 Retained 消息
 	if msg.Retain {
 		if len(msg.Payload) == 0 {
@@ -318,7 +319,7 @@ func (b *Broker) onPublish(c *client.Client, msg *protocol.PublishMessage) {
 			}
 		}
 	}
-	
+
 	// 发布消息
 	b.publishMessage(pubMsg)
 }
@@ -327,13 +328,13 @@ func (b *Broker) onPublish(c *client.Client, msg *protocol.PublishMessage) {
 func (b *Broker) publishMessage(msg *protocol.Message) {
 	// 获取订阅者
 	subscribers := b.topicManager.GetSubscribers(msg.Topic)
-	
+
 	// 发送给订阅者
 	for clientID, qos := range subscribers {
 		b.mu.RLock()
 		c, ok := b.clients[clientID]
 		b.mu.RUnlock()
-		
+
 		if !ok {
 			// 客户端离线，保存离线消息
 			if qos > 0 && b.storage != nil {
@@ -344,7 +345,7 @@ func (b *Broker) publishMessage(msg *protocol.Message) {
 			}
 			continue
 		}
-		
+
 		// 发送消息
 		pubMsg := &protocol.PublishMessage{
 			Topic:    msg.Topic,
@@ -353,7 +354,7 @@ func (b *Broker) publishMessage(msg *protocol.Message) {
 			Retain:   false, // 转发时不保留
 			PacketID: c.NextPacketID(),
 		}
-		
+
 		if err := c.SendPublish(pubMsg); err != nil {
 			// 发送失败，保存离线消息
 			if qos > 0 && b.storage != nil {
@@ -364,7 +365,7 @@ func (b *Broker) publishMessage(msg *protocol.Message) {
 			b.sysTopic.IncrementBytesSent(uint64(len(msg.Payload)))
 		}
 	}
-	
+
 	// 集群转发
 	if b.cluster != nil {
 		b.cluster.ForwardMessage(msg)
@@ -374,31 +375,48 @@ func (b *Broker) publishMessage(msg *protocol.Message) {
 // onSubscribe 处理订阅
 func (b *Broker) onSubscribe(c *client.Client, msg *protocol.SubscribeMessage) {
 	returnCodes := make([]byte, len(msg.Topics))
-	
+
 	for i, sub := range msg.Topics {
 		// 订阅主题
 		b.topicManager.Subscribe(c.ID, sub.Topic, sub.QoS)
 		returnCodes[i] = sub.QoS
-		
-		// 发送 Retained 消息
+
+		// 发送 Retained 消息：支持通配符与共享订阅
 		if b.storage != nil {
-			retained, err := b.storage.GetRetainedMessage(sub.Topic)
-			if err == nil && retained != nil {
-				pubMsg := &protocol.PublishMessage{
-					Topic:    retained.Topic,
-					Payload:  retained.Payload,
-					QoS:      sub.QoS,
-					Retain:   true,
-					PacketID: c.NextPacketID(),
+			filter := sub.Topic
+			if strings.HasPrefix(filter, "$share/") || strings.HasPrefix(filter, "$queue/") {
+				parts := strings.SplitN(filter, "/", 3)
+				if strings.HasPrefix(filter, "$queue/") {
+					parts = []string{"$share", "queue", strings.TrimPrefix(filter, "$queue/")}
 				}
-				c.SendPublish(pubMsg)
+				if len(parts) == 3 {
+					filter = parts[2]
+				}
+			}
+			if filter != "" {
+				retainedAll, err := b.storage.GetRetainedMessages()
+				if err == nil && retainedAll != nil {
+					matcher := topic.NewTrieMatcher()
+					for rTopic, retained := range retainedAll {
+						if matcher.Match(rTopic, filter) {
+							pubMsg := &protocol.PublishMessage{
+								Topic:    retained.Topic,
+								Payload:  retained.Payload,
+								QoS:      sub.QoS,
+								Retain:   true,
+								PacketID: c.NextPacketID(),
+							}
+							c.SendPublish(pubMsg)
+						}
+					}
+				}
 			}
 		}
 	}
-	
+
 	// 发送 SUBACK
 	c.SendSubAck(msg.PacketID, returnCodes)
-	
+
 	// 更新会话
 	if b.storage != nil {
 		sess := &storage.Session{
@@ -416,10 +434,10 @@ func (b *Broker) onUnsubscribe(c *client.Client, msg *protocol.UnsubscribeMessag
 	for _, topicName := range msg.Topics {
 		b.topicManager.Unsubscribe(c.ID, topicName)
 	}
-	
+
 	// 发送 UNSUBACK
 	c.SendUnsubAck(msg.PacketID)
-	
+
 	// 更新会话
 	if b.storage != nil {
 		sess := &storage.Session{
@@ -442,12 +460,12 @@ func (b *Broker) sendOfflineMessages(c *client.Client) {
 	if b.storage == nil {
 		return
 	}
-	
+
 	messages, err := b.storage.GetOfflineMessages(c.ID)
 	if err != nil {
 		return
 	}
-	
+
 	for _, msg := range messages {
 		pubMsg := &protocol.PublishMessage{
 			Topic:    msg.Topic,
@@ -456,11 +474,11 @@ func (b *Broker) sendOfflineMessages(c *client.Client) {
 			Retain:   false,
 			PacketID: c.NextPacketID(),
 		}
-		
+
 		if err := c.SendPublish(pubMsg); err != nil {
 			break
 		}
-		
+
 		// 删除离线消息
 		b.storage.DeleteOfflineMessage(c.ID, msg.PacketID)
 	}
@@ -470,21 +488,21 @@ func (b *Broker) sendOfflineMessages(c *client.Client) {
 func (b *Broker) keepAliveChecker() {
 	ticker := time.NewTicker(30 * time.Second)
 	defer ticker.Stop()
-	
+
 	for {
 		select {
 		case <-ticker.C:
 			if !b.isRunning() {
 				return
 			}
-			
+
 			b.mu.RLock()
 			clients := make([]*client.Client, 0, len(b.clients))
 			for _, c := range b.clients {
 				clients = append(clients, c)
 			}
 			b.mu.RUnlock()
-			
+
 			for _, c := range clients {
 				if c.KeepAlive > 0 {
 					lastPing := c.GetLastPing()
@@ -518,38 +536,38 @@ func (b *Broker) isRunning() bool {
 func (b *Broker) Stop() {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	
+
 	if !b.running {
 		return
 	}
-	
+
 	b.running = false
-	
+
 	// 停止监听
 	if b.listener != nil {
 		b.listener.Close()
 	}
-	
+
 	// 断开所有客户端
 	for _, c := range b.clients {
 		c.Disconnect()
 	}
-	
+
 	// 停止批处理
 	if b.batchProcessor != nil {
 		b.batchProcessor.Stop()
 	}
-	
+
 	// 停止系统主题
 	if b.sysTopic != nil {
 		b.sysTopic.Stop()
 	}
-	
+
 	// 停止集群
 	if b.cluster != nil {
 		b.cluster.Stop()
 	}
-	
+
 	// 关闭存储
 	if b.storage != nil {
 		b.storage.Close()
@@ -565,7 +583,7 @@ func (b *Broker) GetStats() *systopic.Stats {
 func (b *Broker) GetClients() map[string]*client.Client {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
-	
+
 	result := make(map[string]*client.Client)
 	for k, v := range b.clients {
 		result[k] = v

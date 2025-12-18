@@ -71,6 +71,22 @@ docker run -d \
 
 配置完成后，每次推送到 `main` 分支或打上 `v*.*.*` 标签时，会自动构建并推送到 Docker Hub。
 
+## 订阅模式
+
+- 普通订阅：`sensor/+/temp`、`devices/#` 等
+- 共享订阅：`$share/<group>/<filter>`，同一 group 内的多个客户端将以轮询方式分担消息
+- 队列订阅（别名）：`$queue/<filter>` 等价于 `$share/queue/<filter>`
+
+### 共享订阅示例
+
+```text
+$share/workers/sensor/+/temp
+```
+
+- 客户端 A、B 都订阅上述主题时，发布到 `sensor/x/temp` 的消息会在 A、B 之间轮询分发
+- 支持通配符匹配
+- Retained 消息在订阅建立时按过滤器匹配并下发到当前订阅者
+
 ## API 文档
 
 HTTP API 默认监听在 `:8080` 端口。

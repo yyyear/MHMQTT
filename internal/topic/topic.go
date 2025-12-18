@@ -103,6 +103,8 @@ func (m *TrieMatcher) Validate(topic string) bool {
 type Manager struct {
 	mu          sync.RWMutex
 	subscribers map[string]map[string]byte // topic -> clientID -> QoS
+	sharedSubs  map[string]map[string]map[string]byte // group -> filter -> clientID -> QoS
+	rrIndex     map[string]int                        // round-robin index per group|filter
 	matcher     Matcher
 }
 
@@ -110,14 +112,51 @@ type Manager struct {
 func NewManager() *Manager {
 	return &Manager{
 		subscribers: make(map[string]map[string]byte),
+		sharedSubs:  make(map[string]map[string]map[string]byte),
+		rrIndex:     make(map[string]int),
 		matcher:     NewTrieMatcher(),
 	}
+}
+
+// isSharedTopic 判断是否为共享订阅
+// 支持:
+// - $share/<group>/<filter>
+// - $queue/<filter> (作为 $share/queue/<filter> 的别名)
+func isSharedTopic(topic string) (group, filter string, ok bool) {
+	if strings.HasPrefix(topic, "$share/") {
+		parts := strings.SplitN(topic, "/", 3)
+		if len(parts) == 3 && parts[2] != "" {
+			return parts[1], parts[2], true
+		}
+		return "", "", false
+	}
+	if strings.HasPrefix(topic, "$queue/") {
+		filter := strings.TrimPrefix(topic, "$queue/")
+		if filter != "" {
+			return "queue", filter, true
+		}
+	}
+	return "", "", false
 }
 
 // Subscribe 订阅主题
 func (m *Manager) Subscribe(clientID, topic string, qos byte) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	
+	if group, filter, shared := isSharedTopic(topic); shared {
+		if !m.matcher.Validate(filter) {
+			return
+		}
+		if m.sharedSubs[group] == nil {
+			m.sharedSubs[group] = make(map[string]map[string]byte)
+		}
+		if m.sharedSubs[group][filter] == nil {
+			m.sharedSubs[group][filter] = make(map[string]byte)
+		}
+		m.sharedSubs[group][filter][clientID] = qos
+		return
+	}
 	
 	if !m.matcher.Validate(topic) {
 		return
@@ -133,6 +172,22 @@ func (m *Manager) Subscribe(clientID, topic string, qos byte) {
 func (m *Manager) Unsubscribe(clientID, topic string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	
+	if group, filter, shared := isSharedTopic(topic); shared {
+		if groups, ok := m.sharedSubs[group]; ok {
+			if subs, ok := groups[filter]; ok {
+				delete(subs, clientID)
+				if len(subs) == 0 {
+					delete(groups, filter)
+					delete(m.rrIndex, group+"|"+filter)
+				}
+			}
+			if len(groups) == 0 {
+				delete(m.sharedSubs, group)
+			}
+		}
+		return
+	}
 	
 	if subscribers, ok := m.subscribers[topic]; ok {
 		delete(subscribers, clientID)
@@ -181,6 +236,36 @@ func (m *Manager) GetSubscribers(topic string) map[string]byte {
 		}
 	}
 	
+	// 共享订阅匹配：每个 group/filter 只选一个客户端（轮询）
+	for group, filters := range m.sharedSubs {
+		for filter, subs := range filters {
+			if m.matcher.Match(topic, filter) && len(subs) > 0 {
+				// 生成稳定的客户端列表（按 clientID 排序）
+				clientIDs := make([]string, 0, len(subs))
+				for cid := range subs {
+					clientIDs = append(clientIDs, cid)
+				}
+				// 简单的插入排序避免引入排序库
+				for i := 1; i < len(clientIDs); i++ {
+					j := i
+					for j > 0 && clientIDs[j-1] > clientIDs[j] {
+						clientIDs[j-1], clientIDs[j] = clientIDs[j], clientIDs[j-1]
+						j--
+					}
+				}
+				key := group + "|" + filter
+				idx := m.rrIndex[key] % len(clientIDs)
+				selected := clientIDs[idx]
+				m.rrIndex[key] = (m.rrIndex[key] + 1) % len(clientIDs)
+				qos := subs[selected]
+				// 如果已存在，取较大的 QoS
+				if existingQoS, ok := subscribers[selected]; !ok || qos > existingQoS {
+					subscribers[selected] = qos
+				}
+			}
+		}
+	}
+	
 	return subscribers
 }
 
@@ -203,4 +288,3 @@ func (m *Manager) GetSubscriptions(clientID string) map[string]byte {
 func IsSystemTopic(topic string) bool {
 	return strings.HasPrefix(topic, "$SYS/")
 }
-
