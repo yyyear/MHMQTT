@@ -51,7 +51,7 @@ bin/
 dist/
 
 # Data
-
+data/
 
 # Logs
 logs/
