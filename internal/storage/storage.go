@@ -8,6 +8,7 @@ import (
 
 	"mhmqtt/internal/protocol"
 
+	"github.com/yyyear/YY"
 	"go.etcd.io/bbolt"
 )
 
@@ -54,13 +55,29 @@ type BoltStorage struct {
 }
 
 // NewBoltStorage 创建新的 BoltDB 存储
-func NewBoltStorage(path string) (*BoltStorage, error) {
+func NewBoltStorage(pathLog string) (*BoltStorage, error) {
+	path := pathLog
+	YY.Debug("opening boltdb storage at path: " + path)
 	// 创建数据库文件
-	if _, err := os.Stat(path); os.IsNotExist(err) {
-		os.MkdirAll(path, 0755)
+	f, err := os.Stat(path)
+	if f != nil {
+		YY.Debug("file info: "+f.Name(), err)
+	}
+	if err != nil {
+		YY.Debug("stat file error: " + err.Error())
 	}
 
-	db, err := bbolt.Open(path, 0600, &bbolt.Options{Timeout: 1 * time.Second})
+	if os.IsNotExist(err) {
+		YY.Debug("create data directory")
+		os.MkdirAll("./data", 0755)
+		file, err := os.Create(pathLog)
+		if err != nil {
+			return nil, err
+		}
+		file.Close()
+	}
+
+	db, err := bbolt.Open(path, 600, &bbolt.Options{Timeout: 1 * time.Second})
 	if err != nil {
 		return nil, fmt.Errorf("打开数据库失败: %w", err)
 	}
