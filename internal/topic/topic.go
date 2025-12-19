@@ -28,14 +28,14 @@ func NewTrieMatcher() *TrieMatcher {
 func (m *TrieMatcher) Match(topic, pattern string) bool {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-
+	
 	return m.match(topic, pattern)
 }
 
 func (m *TrieMatcher) match(topic, pattern string) bool {
 	topicParts := strings.Split(topic, "/")
 	patternParts := strings.Split(pattern, "/")
-
+	
 	return m.matchParts(topicParts, patternParts)
 }
 
@@ -43,15 +43,15 @@ func (m *TrieMatcher) matchParts(topicParts, patternParts []string) bool {
 	if len(patternParts) == 0 {
 		return len(topicParts) == 0
 	}
-
+	
 	if len(topicParts) == 0 {
 		// 只有 # 可以匹配空
 		return len(patternParts) == 1 && patternParts[0] == "#"
 	}
-
+	
 	patternPart := patternParts[0]
 	topicPart := topicParts[0]
-
+	
 	switch patternPart {
 	case "#":
 		// # 必须位于最后
@@ -73,7 +73,7 @@ func (m *TrieMatcher) Validate(topic string) bool {
 	if topic == "" {
 		return false
 	}
-
+	
 	// 不能包含空字符串段
 	parts := strings.Split(topic, "/")
 	for _, part := range parts {
@@ -82,7 +82,7 @@ func (m *TrieMatcher) Validate(topic string) bool {
 			return false
 		}
 	}
-
+	
 	// 检查通配符使用
 	hasHash := false
 	for i, part := range parts {
@@ -97,7 +97,7 @@ func (m *TrieMatcher) Validate(topic string) bool {
 			return false
 		}
 	}
-
+	
 	return true
 }
 
@@ -116,7 +116,7 @@ type Manager struct {
 	rrIndex     map[string]int                        // round-robin index per group|filter
 	rrMu        sync.Mutex
 	matcher     Matcher
-
+	
 	// 高频主题订阅者缓存
 	cacheMu       sync.RWMutex
 	cache         map[string]*subscriberCacheEntry // topic -> cached subscribers
@@ -130,7 +130,7 @@ type Manager struct {
 
 // NewManager 创建新的主题管理器
 func NewManager() *Manager {
-	return NewManagerWithCache(100*time.Millisecond, 10000000, 3)
+	return NewManagerWithCache(1*time.Second, 10000000, 3)
 }
 
 // NewManagerWithCache 创建带缓存配置的主题管理器
@@ -146,11 +146,11 @@ func NewManagerWithCache(cacheTTL time.Duration, cacheMaxSize int, cacheHitMin u
 		cacheHitMin:  cacheHitMin,
 		stopCleanup:  make(chan struct{}),
 	}
-
+	
 	// 启动缓存清理协程
 	m.cleanupTicker = time.NewTicker(cacheTTL * 2)
 	go m.cacheCleanup()
-
+	
 	return m
 }
 
@@ -170,10 +170,10 @@ func (m *Manager) cacheCleanup() {
 // cleanExpiredCache 清理过期缓存条目
 func (m *Manager) cleanExpiredCache() {
 	now := time.Now().UnixNano()
-
+	
 	m.cacheMu.Lock()
 	defer m.cacheMu.Unlock()
-
+	
 	for topic, entry := range m.cache {
 		if entry.expireAt < now {
 			delete(m.cache, topic)
@@ -218,7 +218,7 @@ func isSharedTopic(topic string) (group, filter string, ok bool) {
 // Subscribe 订阅主题
 func (m *Manager) Subscribe(clientID, topic string, qos byte) {
 	m.mu.Lock()
-
+	
 	if group, filter, shared := isSharedTopic(topic); shared {
 		if !m.matcher.Validate(filter) {
 			m.mu.Unlock()
@@ -236,18 +236,18 @@ func (m *Manager) Subscribe(clientID, topic string, qos byte) {
 		m.invalidateCache()
 		return
 	}
-
+	
 	if !m.matcher.Validate(topic) {
 		m.mu.Unlock()
 		return
 	}
-
+	
 	if m.subscribers[topic] == nil {
 		m.subscribers[topic] = make(map[string]byte)
 	}
 	m.subscribers[topic][clientID] = qos
 	m.mu.Unlock()
-
+	
 	// 使缓存失效
 	m.invalidateCache()
 }
@@ -256,7 +256,7 @@ func (m *Manager) Subscribe(clientID, topic string, qos byte) {
 func (m *Manager) Unsubscribe(clientID, topic string) {
 	var keyToDelete string
 	var changed bool
-
+	
 	m.mu.Lock()
 	if group, filter, shared := isSharedTopic(topic); shared {
 		if groups, ok := m.sharedSubs[group]; ok {
@@ -288,7 +288,7 @@ func (m *Manager) Unsubscribe(clientID, topic string) {
 		}
 		return
 	}
-
+	
 	if subscribers, ok := m.subscribers[topic]; ok {
 		if _, exists := subscribers[clientID]; exists {
 			delete(subscribers, clientID)
@@ -299,7 +299,7 @@ func (m *Manager) Unsubscribe(clientID, topic string) {
 		}
 	}
 	m.mu.Unlock()
-
+	
 	// 使缓存失效
 	if changed {
 		m.invalidateCache()
@@ -309,7 +309,7 @@ func (m *Manager) Unsubscribe(clientID, topic string) {
 // UnsubscribeAll 取消客户端的所有订阅
 func (m *Manager) UnsubscribeAll(clientID string) {
 	var changed bool
-
+	
 	m.mu.Lock()
 	for topic, subscribers := range m.subscribers {
 		if _, exists := subscribers[clientID]; exists {
@@ -320,7 +320,7 @@ func (m *Manager) UnsubscribeAll(clientID string) {
 			delete(m.subscribers, topic)
 		}
 	}
-
+	
 	// 也清理共享订阅
 	for _, filters := range m.sharedSubs {
 		for _, subs := range filters {
@@ -331,7 +331,7 @@ func (m *Manager) UnsubscribeAll(clientID string) {
 		}
 	}
 	m.mu.Unlock()
-
+	
 	// 使缓存失效
 	if changed {
 		m.invalidateCache()
@@ -341,7 +341,7 @@ func (m *Manager) UnsubscribeAll(clientID string) {
 // GetSubscribers 获取订阅者（带缓存）
 func (m *Manager) GetSubscribers(topic string) map[string]byte {
 	now := time.Now().UnixNano()
-
+	
 	// 先检查缓存（对于非共享订阅的普通主题）
 	m.cacheMu.RLock()
 	if entry, ok := m.cache[topic]; ok && entry.expireAt > now {
@@ -356,10 +356,10 @@ func (m *Manager) GetSubscribers(topic string) map[string]byte {
 		return result
 	}
 	m.cacheMu.RUnlock()
-
+	
 	// 缓存未命中，计算订阅者
 	subscribers := m.computeSubscribers(topic)
-
+	
 	// 将结果放入缓存（只缓存非空结果且缓存未满）
 	if len(subscribers) > 0 {
 		m.cacheMu.Lock()
@@ -377,7 +377,7 @@ func (m *Manager) GetSubscribers(topic string) map[string]byte {
 		}
 		m.cacheMu.Unlock()
 	}
-
+	
 	return subscribers
 }
 
@@ -385,23 +385,23 @@ func (m *Manager) GetSubscribers(topic string) map[string]byte {
 func (m *Manager) computeSubscribers(topic string) map[string]byte {
 	// 使用预分配的 map 减少扩容
 	subscribers := make(map[string]byte, 16)
-
+	
 	// 快照拷贝，尽快释放读锁，避免阻塞写操作
 	m.mu.RLock()
-
+	
 	// 精确匹配
 	if subs, ok := m.subscribers[topic]; ok {
 		for clientID, qos := range subs {
 			subscribers[clientID] = qos
 		}
 	}
-
+	
 	// 复用切片来存储需要匹配的模式
 	patterns := make([]struct {
 		pattern string
 		subs    map[string]byte
 	}, 0, len(m.subscribers))
-
+	
 	for pattern, subs := range m.subscribers {
 		if pattern != topic && (containsWildcard(pattern)) {
 			// 拷贝内层 map
@@ -415,14 +415,14 @@ func (m *Manager) computeSubscribers(topic string) map[string]byte {
 			}{pattern, cp})
 		}
 	}
-
+	
 	// 复制共享订阅数据
 	shared := make([]struct {
 		group  string
 		filter string
 		subs   map[string]byte
 	}, 0, 8)
-
+	
 	for group, filters := range m.sharedSubs {
 		for filter, subs := range filters {
 			cp := make(map[string]byte, len(subs))
@@ -437,7 +437,7 @@ func (m *Manager) computeSubscribers(topic string) map[string]byte {
 		}
 	}
 	m.mu.RUnlock()
-
+	
 	// 通配符匹配
 	for _, p := range patterns {
 		if m.matcher.Match(topic, p.pattern) {
@@ -448,7 +448,7 @@ func (m *Manager) computeSubscribers(topic string) map[string]byte {
 			}
 		}
 	}
-
+	
 	// 共享订阅匹配
 	for _, s := range shared {
 		if m.matcher.Match(topic, s.filter) && len(s.subs) > 0 {
@@ -476,7 +476,7 @@ func (m *Manager) computeSubscribers(topic string) map[string]byte {
 			}
 		}
 	}
-
+	
 	return subscribers
 }
 
@@ -489,14 +489,14 @@ func containsWildcard(topic string) bool {
 func (m *Manager) GetSubscriptions(clientID string) map[string]byte {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-
+	
 	subscriptions := make(map[string]byte)
 	for topic, subscribers := range m.subscribers {
 		if qos, ok := subscribers[clientID]; ok {
 			subscriptions[topic] = qos
 		}
 	}
-
+	
 	return subscriptions
 }
 
